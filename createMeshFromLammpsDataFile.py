@@ -1,4 +1,6 @@
-#data reader
+#data importer for LAMMPS data files
+# written by Rene Rekers
+
 import bpy, bmesh
 import numpy as np
 from mathutils import Vector
