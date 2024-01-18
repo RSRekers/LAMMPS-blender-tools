@@ -6,7 +6,8 @@ import os
 # How to use this script to create lammps input from blender scenes:
 # 1. Select all atoms and molecules which you want to export
 #   all objects follow an object naming convention which decides the procedure for data export. 
-#   For all types of atoms, information of the ID type in LAMMPS and a charge value is required. All parts are separated by _. This may vary with respect to molecules, crystals as explained respectively
+#   For all types of atoms, information of the ID type in LAMMPS and a charge value is required. All parts are separated by _. 
+#   This may vary with respect to molecules, crystals as explained respectively. Always include an additional _ after the name!
 #   if you export a unit cell of a metal or ionic crystals, make sure all models contain only one type of atoms
 
 # 2. Be careful to apply all transforms and modifiers before exporting. The global coordinates of all vertices are used directly representing the space in the MD units
@@ -107,15 +108,15 @@ def MakePolarizable(inputPointMesh, index, moleculeID, lastbond,out_moltypes):
     out_moltypes[3].append(typeID+1)
     return index, atomOutput, bond_out, cs_out, moleculeID,out_moltypes
 
-# meshes including edge data in which atoms are marked by a material are used to create a molecule representation
-# bonds, angles and dihedrals are assigned to default groups 
-# To identify the nature of multiple type, an extra file is written in which an example is given for each bond/angle or dihedral
-# this also serves as a template to write a PARM.lammps file
-# The bond angle or dihedral types which if no extra force constant is added will then need to be written as zero.
-# the atom IDs and charges are stored in the name of a vertex group to which each vertex in the mesh representing a molecule needs to be assigned to.
+# meshes with edge data use vertex groups to assign the vertices to atom groups
+# Make sure to not have unassigned vertices!
+# later, a default helper file including information about the created bond, angle and dihedral types is created, with which the force field parameters can be assigned
+# This returns all the topological types, depending on the particle type determined by the vertex group
+# the atom IDs and charges are stored in the name of the vertex group to which each vertex in the mesh representing a molecule needs to be assigned to.
 # A molecule must only contain one connected mesh with all its covalent bonds
-# Mesh name: Name_Mol, Vertex group names: type_charge
-def MakeMolecule(inputPointMesh, index, moleculeID, lastbond, lastangle, lastdihedral, out_moltypes):
+# Mesh name Name_Mol_, Vertex group names: type_charge_helpingInfo
+
+def MakeMolecule(inputPointMesh,  moleculeID, lastatom, lastbond, lastangle, lastdihedral, out_moltypes):
     typearray = []
     atomtype_helperarray=[]
     out_atoms= []
@@ -141,23 +142,20 @@ def MakeMolecule(inputPointMesh, index, moleculeID, lastbond, lastangle, lastdih
         typearray += [ int(float(nam[0])) for v in inputPointMesh.data.vertices if i in [ vg.group for vg in v.groups ] ]
         chargearray += [ nam[1] for v in inputPointMesh.data.vertices if i in [ vg.group for vg in v.groups ] ]
         
-    print([v.index for v in bm.verts])
-    print("types: ", typearray)
-    print("verts ", atomtype_helperarray)
     atomtypearray = [typearray[v] for v in np.argsort(atomtype_helperarray)]
     chargearray = [chargearray[v] for v in np.argsort(atomtype_helperarray)]
     bondtypearray=[]
     angletypearray=[]
     dihedraltypearray=[]
     for i,e in enumerate(inputPointMesh.data.edges):
-        a = e.vertices[0]
-        b = e.vertices[1]
+        a = e.vertices[0] + lastatom
+        b = e.vertices[1] + lastatom
         n = np.sort([a,b])
         out_bonds.append(f"{a} {b}")
         bondtypearray.append(f"{atomtypearray[n[0]]} {atomtypearray[n[1]]}")
         for j,ang in enumerate(inputPointMesh.data.edges):
-            c = ang.vertices[0]
-            d = ang.vertices[1]
+            c = ang.vertices[0] + lastatom
+            d = ang.vertices[1] + lastatom
             subchain=None
             if(i<j):
                 if(b==c):
@@ -204,8 +202,8 @@ def MakeMolecule(inputPointMesh, index, moleculeID, lastbond, lastangle, lastdih
                     angletypearray.append(dtinter)
                     out_angles.append(f"{subchain[0]+1} {subchain[1]+1} {subchain[2]+1}")
                 for k,e_dihed in enumerate(inputPointMesh.data.edges):
-                    e = e_dihed.vertices[0]
-                    f = e_dihed.vertices[1]
+                    e = e_dihed.vertices[0] + lastatom
+                    f = e_dihed.vertices[1] + lastatom
                     if(j<k and subchain != None):
                         if(e==subchain[0]):
                             #print("matchdihed: ", i,j,k,": ", a, b,c,d,e,f)
@@ -257,8 +255,8 @@ def MakeMolecule(inputPointMesh, index, moleculeID, lastbond, lastangle, lastdih
     angletypearray=[[x+1 for x,i in enumerate(np.unique(angletypearray))if(i==j)][0] for j in angletypearray]
     dihedraltypearray=[[x+1 for x,i in enumerate(np.unique(dihedraltypearray))if(i==j)][0] for j in dihedraltypearray]
     for i,vert in enumerate(bm.verts):
-        out_atoms.append(f"{index} {moleculeID} {atomtypearray[i]} {chargearray[i]} {vert.co[0]} {vert.co[1]} {vert.co[2]}\n")
-        index+=1
+        out_atoms.append(f"{lastatom} {moleculeID} {atomtypearray[i]} {chargearray[i]} {vert.co[0]} {vert.co[1]} {vert.co[2]}\n")
+        lastatom+=1
     
     #WEITER HIER brauche eine Liste der Bond types über die atomsorte aus den vertex groups. Muss auch prüfen ob ab=ba
     for i,e in enumerate(inputPointMesh.data.edges):
@@ -269,7 +267,7 @@ def MakeMolecule(inputPointMesh, index, moleculeID, lastbond, lastangle, lastdih
     for i, d in enumerate(out_dihedrals):
         out_dihedrals[i] = f"{lastdihedral+i+1} {dihedraltypearray[i]} {d}\n"
     
-    return index, out_atoms, out_bonds, out_angles, out_dihedrals, out_moltypes
+    return lastatom, out_atoms, out_bonds, out_angles, out_dihedrals, out_moltypes
 
 
     # cycle through all vertices
@@ -293,7 +291,7 @@ def WriteLammpsFile(inputSelection):
     last_dihedral=0
     n_bondTypes=0
     # first iterate and write all atom to arrays
-    index = 1 # index for atom counter
+    last_atom = 1 # index for atom counter
     moleculeID = 1 # the molecule ID needs to be changed if polarizable two-point dipoles are used. Therefore, the ID must be counted up.
     # nonpolarizable atoms still use the molecule-ID 1
     
@@ -312,7 +310,7 @@ def WriteLammpsFile(inputSelection):
         nam = obj.name.split("_")
         if ("Pol" in nam):
             
-            index, o_at, o_bd, o_cs, moleculeID,out_moltypes =MakePolarizable(obj, index, moleculeID+1,  last_bond,out_moltypes)
+            lastatom, o_at, o_bd, o_cs, moleculeID,out_moltypes =MakePolarizable(obj, moleculeID+1,  last_bond,out_moltypes)
             last_bond+=len(o_bd)
             for i in o_at:
                 polarizable.append(i)
@@ -323,7 +321,7 @@ def WriteLammpsFile(inputSelection):
             
             n_bondTypes+=1
         elif ("Mol" in nam):
-            index, o_at, o_bd, o_angles, o_dihedral, out_moltypes_update= MakeMolecule(obj, index, moleculeID, last_bond, last_angle, last_dihedral, out_moltypes)
+            last_atom, o_at, o_bd, o_angles, o_dihedral, out_moltypes_update= MakeMolecule(obj, moleculeID, last_atom, last_bond, last_angle, last_dihedral, out_moltypes)
             for i in out_moltypes_update[0]:
                 if i not in out_moltypes[0]:
                     out_moltypes[0].append(i)
@@ -350,7 +348,7 @@ def WriteLammpsFile(inputSelection):
                 dihedrals.append(i)
         else:
             print(nam)
-            index, o_at,out_moltypes = MakeAtoms(obj, index,out_moltypes)
+            last_atom, o_at,out_moltypes = MakeAtoms(obj, last_atom,out_moltypes)
             #print(o_at) 
             for i in o_at:
                 atoms.append(i)
