@@ -116,7 +116,15 @@ def MakePolarizable(inputPointMesh, index, moleculeID, lastbond,out_moltypes):
 # A molecule must only contain one connected mesh with all its covalent bonds
 # Mesh name Name_Mol_, Vertex group names: type_charge_helpingInfo
 
-def MakeMolecule(inputPointMesh,  moleculeID, lastatom, lastbond, lastangle, lastdihedral, out_moltypes):
+# meshes including edge data in which atoms are marked by a material are used to create a molecule representation
+# bonds, angles and dihedrals are assigned to default groups 
+# To identify the nature of multiple type, an extra file is written in which an example is given for each bond/angle or dihedral
+# this also serves as a template to write a PARM.lammps file
+# The bond angle or dihedral types which if no extra force constant is added will then need to be written as zero.
+# the atom IDs and charges are stored in the name of a vertex group to which each vertex in the mesh representing a molecule needs to be assigned to.
+# A molecule must only contain one connected mesh with all its covalent bonds
+# Mesh name: Name_Mol, Vertex group names: type_charge
+def MakeMolecule(inputPointMesh, index, moleculeID, lastbond, lastangle, lastdihedral, out_moltypes):
     typearray = []
     atomtype_helperarray=[]
     out_atoms= []
@@ -142,20 +150,23 @@ def MakeMolecule(inputPointMesh,  moleculeID, lastatom, lastbond, lastangle, las
         typearray += [ int(float(nam[0])) for v in inputPointMesh.data.vertices if i in [ vg.group for vg in v.groups ] ]
         chargearray += [ nam[1] for v in inputPointMesh.data.vertices if i in [ vg.group for vg in v.groups ] ]
         
+    print([v.index for v in bm.verts])
+    print("types: ", typearray)
+    print("verts ", atomtype_helperarray)
     atomtypearray = [typearray[v] for v in np.argsort(atomtype_helperarray)]
     chargearray = [chargearray[v] for v in np.argsort(atomtype_helperarray)]
     bondtypearray=[]
     angletypearray=[]
     dihedraltypearray=[]
     for i,e in enumerate(inputPointMesh.data.edges):
-        a = e.vertices[0] + lastatom
-        b = e.vertices[1] + lastatom
+        a = e.vertices[0]
+        b = e.vertices[1]
         n = np.sort([a,b])
         out_bonds.append(f"{a} {b}")
         bondtypearray.append(f"{atomtypearray[n[0]]} {atomtypearray[n[1]]}")
         for j,ang in enumerate(inputPointMesh.data.edges):
-            c = ang.vertices[0] + lastatom
-            d = ang.vertices[1] + lastatom
+            c = ang.vertices[0]
+            d = ang.vertices[1]
             subchain=None
             if(i<j):
                 if(b==c):
@@ -202,8 +213,8 @@ def MakeMolecule(inputPointMesh,  moleculeID, lastatom, lastbond, lastangle, las
                     angletypearray.append(dtinter)
                     out_angles.append(f"{subchain[0]+1} {subchain[1]+1} {subchain[2]+1}")
                 for k,e_dihed in enumerate(inputPointMesh.data.edges):
-                    e = e_dihed.vertices[0] + lastatom
-                    f = e_dihed.vertices[1] + lastatom
+                    e = e_dihed.vertices[0]
+                    f = e_dihed.vertices[1]
                     if(j<k and subchain != None):
                         if(e==subchain[0]):
                             #print("matchdihed: ", i,j,k,": ", a, b,c,d,e,f)
@@ -255,8 +266,8 @@ def MakeMolecule(inputPointMesh,  moleculeID, lastatom, lastbond, lastangle, las
     angletypearray=[[x+1 for x,i in enumerate(np.unique(angletypearray))if(i==j)][0] for j in angletypearray]
     dihedraltypearray=[[x+1 for x,i in enumerate(np.unique(dihedraltypearray))if(i==j)][0] for j in dihedraltypearray]
     for i,vert in enumerate(bm.verts):
-        out_atoms.append(f"{lastatom} {moleculeID} {atomtypearray[i]} {chargearray[i]} {vert.co[0]} {vert.co[1]} {vert.co[2]}\n")
-        lastatom+=1
+        out_atoms.append(f"{index} {moleculeID} {atomtypearray[i]} {chargearray[i]} {vert.co[0]} {vert.co[1]} {vert.co[2]}\n")
+        index+=1
     
     #WEITER HIER brauche eine Liste der Bond types über die atomsorte aus den vertex groups. Muss auch prüfen ob ab=ba
     for i,e in enumerate(inputPointMesh.data.edges):
@@ -267,7 +278,7 @@ def MakeMolecule(inputPointMesh,  moleculeID, lastatom, lastbond, lastangle, las
     for i, d in enumerate(out_dihedrals):
         out_dihedrals[i] = f"{lastdihedral+i+1} {dihedraltypearray[i]} {d}\n"
     
-    return lastatom, out_atoms, out_bonds, out_angles, out_dihedrals, out_moltypes
+    return index, out_atoms, out_bonds, out_angles, out_dihedrals, out_moltypes
 
 
     # cycle through all vertices
