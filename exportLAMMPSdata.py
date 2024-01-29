@@ -1,4 +1,5 @@
 # Script to export data in a scene in blender to a data file for MD simulations in the LAMMPS format
+# WARNING! not yet working properly!!
 import bpy, bmesh
 import numpy as np
 from mathutils import Vector
