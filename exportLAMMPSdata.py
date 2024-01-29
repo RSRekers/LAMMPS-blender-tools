@@ -1,17 +1,13 @@
-# Script to export data in a scene in blender to a data file for MD simulations in the LAMMPS format
-# WARNING! not yet working properly!!
 import bpy, bmesh
 import numpy as np
 from mathutils import Vector
 import os
 # How to use this script to create lammps input from blender scenes:
-# 1. Select all atoms and molecules which you want to export
-#   all objects follow an object naming convention which decides the procedure for data export. 
-#   For all types of atoms, information of the ID type in LAMMPS and a charge value is required. All parts are separated by _. 
-#   This may vary with respect to molecules, crystals as explained respectively. Always include an additional _ after the name!
-#   if you export a unit cell of a metal or ionic crystals, make sure all models contain only one type of atoms
+# if you export a unit cell or crystals, make sure all models contain only one type of atoms
+# Information for the structure with parameters can be passed by modifying the object name. 
+# Here, each section is separated by "_", starting with the name and the default charge of each atom.
 
-# 2. Be careful to apply all transforms and modifiers before exporting. The global coordinates of all vertices are used directly representing the space in the MD units
+# Be careful to apply all transforms before exporting
 # global variables
 xlo=0
 xhi= 0
@@ -19,10 +15,10 @@ ylo=0
 yhi=0
 zlo=0
 zhi = 0
-datapath = os.path.realpath(r"DATAPATH")
-datafilename = "PEO3chains" # just teh base name without filetype suffix
+datapath = os.path.realpath(r"C:\Users\User\lammpsProjects\PEO_Nasicon_interface\neu_PEO\V2")
+print("start")
+datafilename = "PEOLiTFSIEO6complexT1"
 
-# will return the default box dimensions as a bounding box of all atoms
 def CheckBox(x,y,z):
     global xlo, xhi, ylo, yhi, zlo, zhi
     if(x<xlo):
@@ -38,16 +34,14 @@ def CheckBox(x,y,z):
     if(z>zhi):
         zhi=z
     return xlo, xhi, ylo, yhi, zlo, zhi
-  
 # default function for writing full style atom data in lammps data format
 # all verticies for the mesh are treated as atoms from one atom type
-def MakeAtoms(inputPointMesh, index,out_moltypes):
+def MakeAtoms(inputPointMesh,moleculeID, index,out_moltypes):
     output= []
-    
     global xlo, xhi, ylo, yhi, zlo, zhi
     mesh = inputPointMesh.data
     nam = inputPointMesh.name.split("_")
-    print(nam)
+    
     typeID = nam[2][4:]
     # get the bmesh data
     if mesh.is_editmode:
@@ -61,11 +55,12 @@ def MakeAtoms(inputPointMesh, index,out_moltypes):
         #+print(vert.co)
         #print(nam)
         xlo, xhi, ylo, yhi, zlo, zhi=CheckBox(vert.co[0],vert.co[1],vert.co[2])
-        output.append(f"{index} 1 {typeID} {nam[1]} {vert.co[0]} {vert.co[1]} {vert.co[2]}\n")
+        output.append(f"{index} {moleculeID} {typeID} {nam[1]} {vert.co[0]} {vert.co[1]} {vert.co[2]}\n")
         index +=1
         #print(vert.co[0],vert.co[2])
-        
-    out_moltypes[3].append(typeID)
+    
+    print("make atoms",nam, typeID)    
+    out_moltypes[0].append(typeID)
     return index, output,out_moltypes
 
 # polarizable two point atoms, which may overlap - require bond data for each pair
@@ -104,18 +99,10 @@ def MakePolarizable(inputPointMesh, index, moleculeID, lastbond,out_moltypes):
         index +=2
         moleculeID+=1
         #print(vert.co[0],vert.co[2])
-    out_moltypes[0].append(bondType)
-    out_moltypes[3].append(typeID)
-    out_moltypes[3].append(typeID+1)
+    out_moltypes[1].append(bondType)
+    out_moltypes[0].append(typeID)
+    out_moltypes[0].append(typeID+1)
     return index, atomOutput, bond_out, cs_out, moleculeID,out_moltypes
-
-# meshes with edge data use vertex groups to assign the vertices to atom groups
-# Make sure to not have unassigned vertices!
-# later, a default helper file including information about the created bond, angle and dihedral types is created, with which the force field parameters can be assigned
-# This returns all the topological types, depending on the particle type determined by the vertex group
-# the atom IDs and charges are stored in the name of the vertex group to which each vertex in the mesh representing a molecule needs to be assigned to.
-# A molecule must only contain one connected mesh with all its covalent bonds
-# Mesh name Name_Mol_, Vertex group names: type_charge_helpingInfo
 
 # meshes including edge data in which atoms are marked by a material are used to create a molecule representation
 # bonds, angles and dihedrals are assigned to default groups 
@@ -125,7 +112,7 @@ def MakePolarizable(inputPointMesh, index, moleculeID, lastbond,out_moltypes):
 # the atom IDs and charges are stored in the name of a vertex group to which each vertex in the mesh representing a molecule needs to be assigned to.
 # A molecule must only contain one connected mesh with all its covalent bonds
 # Mesh name: Name_Mol, Vertex group names: type_charge
-def MakeMolecule(inputPointMesh, index, moleculeID, lastbond, lastangle, lastdihedral, out_moltypes):
+def MakeMolecule(inputPointMesh,  moleculeID,lastatom, lastbond, lastangle, lastdihedral, out_moltypes):
     typearray = []
     atomtype_helperarray=[]
     out_atoms= []
@@ -163,7 +150,7 @@ def MakeMolecule(inputPointMesh, index, moleculeID, lastbond, lastangle, lastdih
         a = e.vertices[0]
         b = e.vertices[1]
         n = np.sort([a,b])
-        out_bonds.append(f"{a} {b}")
+        out_bonds.append(f"{a+lastatom} {b+lastatom}")
         bondtypearray.append(f"{atomtypearray[n[0]]} {atomtypearray[n[1]]}")
         for j,ang in enumerate(inputPointMesh.data.edges):
             c = ang.vertices[0]
@@ -172,54 +159,58 @@ def MakeMolecule(inputPointMesh, index, moleculeID, lastbond, lastangle, lastdih
             if(i<j):
                 if(b==c):
                     dtinter=f"{atomtypearray[a]} {atomtypearray[b]} {atomtypearray[d]}"
+                    dtinter_rev=f"{atomtypearray[d]} {atomtypearray[b]} {atomtypearray[a]}"
                     if(dtinter in out_moltypes[2] or dtinter in angletypearray):
                         subchain=[a,b,d]
-                    elif(dtinter[::-1] in out_moltypes[2] or dtinter in angletypearray):
+                    elif(dtinter_rev in out_moltypes[2] or dtinter_rev in angletypearray):
                         subchain=[d,b,a]
                     else: 
                         subchain=[a,b,d]
-                    out_angles.append(f"{subchain[0]+1} {subchain[1]+1} {subchain[2]+1}")
+                    out_angles.append(f"{subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
                     angletypearray.append(dtinter)
                 elif(b==d):
                     #out_angles.append(f"{a} {b} {c}")
                     dtinter=f"{atomtypearray[a]} {atomtypearray[b]} {atomtypearray[c]}"
+                    dtinter_rev=f"{atomtypearray[c]} {atomtypearray[b]} {atomtypearray[a]}"
                     if(dtinter in out_moltypes[2] or dtinter in angletypearray):
                         subchain=[a,b,c]
-                    elif(dtinter[::-1] in out_moltypes[2] or dtinter in angletypearray):
+                    elif(dtinter_rev in out_moltypes[2] or dtinter_rev in angletypearray):
                         subchain=[d,b,a]
                     else: 
                         subchain=[a,b,c]
                     angletypearray.append(dtinter)
-                    out_angles.append(f"{subchain[0]+1} {subchain[1]+1} {subchain[2]+1}")
+                    out_angles.append(f"{subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
                 elif(a==c):
                     #out_angles.append(f"{b} {c} {d}")
                     dtinter=f"{atomtypearray[b]} {atomtypearray[c]} {atomtypearray[d]}"
+                    dtinter_rev=f"{atomtypearray[d]} {atomtypearray[c]} {atomtypearray[a]}"
                     if(dtinter in out_moltypes[2] or dtinter in angletypearray):
                         subchain=[b,c,d]
-                    elif(dtinter[::-1] in out_moltypes[2] or dtinter in angletypearray):
+                    elif(dtinter_rev in out_moltypes[2] or dtinter_rev in angletypearray):
                         subchain=[d,c,b]
                     else: 
                         subchain=[b,c,d]
                     angletypearray.append(dtinter)
-                    out_angles.append(f"{subchain[0]+1} {subchain[1]+1} {subchain[2]+1}")
+                    out_angles.append(f"{subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
                 elif(a==d):
                     #out_angles.append(f"{b} {a} {c}")
                     dtinter=f"{atomtypearray[b]} {atomtypearray[a]} {atomtypearray[c]}"
+                    dtinter_rev=f"{atomtypearray[c]} {atomtypearray[a]} {atomtypearray[b]}"
                     if(dtinter in out_moltypes[2] or dtinter in angletypearray):
                         subchain=[b,a,c]
-                    elif(dtinter[::-1] in out_moltypes[2] or dtinter in angletypearray):
+                    elif(dtinter_rev in out_moltypes[2] or dtinter_rev in angletypearray):
                         subchain=[c,a,b]
                     else: 
                         subchain=[b,a,c]
                     angletypearray.append(dtinter)
-                    out_angles.append(f"{subchain[0]+1} {subchain[1]+1} {subchain[2]+1}")
+                    out_angles.append(f"{subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
                 for k,e_dihed in enumerate(inputPointMesh.data.edges):
                     e = e_dihed.vertices[0]
                     f = e_dihed.vertices[1]
-                    if(j<k and subchain != None):
+                    """if(j<k and subchain != None):
                         if(e==subchain[0]):
                             #print("matchdihed: ", i,j,k,": ", a, b,c,d,e,f)
-                            out_dihedrals.append(f"{f+1} {subchain[0]+1} {subchain[1]+1} {subchain[2]+1}")
+                            out_dihedrals.append(f"{f+lastatom} {subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
                             
                             dtinter = f"{atomtypearray[f]} {atomtypearray[subchain[0]]} {atomtypearray[subchain[1]]} {atomtypearray[subchain[2]]}"
                             if(dtinter in out_moltypes[3] or dtinter in dihedraltypearray):
@@ -228,7 +219,7 @@ def MakeMolecule(inputPointMesh, index, moleculeID, lastbond, lastangle, lastdih
                                 dihedraltypearray.append(dtinter[::-1])
                         elif(e==subchain[2]):
                             #print("matchdihed: ", i,j,k,": ", a, b,c,d,e,f)
-                            out_dihedrals.append(f"{f+1} {subchain[0]+1} {subchain[1]+1} {subchain[2]+1}")
+                            out_dihedrals.append(f"{f+lastatom} {subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
                             dtinter=f"{atomtypearray[f]} {atomtypearray[subchain[2]]} {atomtypearray[subchain[1]]} {atomtypearray[subchain[0]]}"
                             if(dtinter in out_moltypes[3] or dtinter in dihedraltypearray):
                                 dihedraltypearray.append(dtinter)
@@ -237,7 +228,7 @@ def MakeMolecule(inputPointMesh, index, moleculeID, lastbond, lastangle, lastdih
 
                         elif(f==subchain[0]):
                             #print("matchdihed: ", i,j,k,": ", a, b,c,d,e,f)
-                            out_dihedrals.append(f"{e+1} {subchain[0]+1} {subchain[1]+1} {subchain[2]+1}")
+                            out_dihedrals.append(f"{e+lastatom} {subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
                             dtinter=f"{atomtypearray[e]} {atomtypearray[subchain[0]]} {atomtypearray[subchain[1]]} {atomtypearray[subchain[2]]}"
                             if(dtinter in out_moltypes[3] or dtinter in dihedraltypearray):
                                 dihedraltypearray.append(dtinter)
@@ -245,14 +236,14 @@ def MakeMolecule(inputPointMesh, index, moleculeID, lastbond, lastangle, lastdih
                                 dihedraltypearray.append(dtinter[::-1])
                         elif(f==subchain[2]):
                             #print("matchdihed: ", i,j,k,": ", a, b,c,d,e,f)
-                            out_dihedrals.append(f"{e+1} {subchain[0]+1} {subchain[1]+1} {subchain[2]+1}")
+                            out_dihedrals.append(f"{e+lastatom} {subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
                             dtinter=f"{atomtypearray[e]} {atomtypearray[subchain[2]]} {atomtypearray[subchain[1]]} {atomtypearray[subchain[0]]}"
                             if(dtinter in out_moltypes[3] or dtinter in dihedraltypearray):
                                 dihedraltypearray.append(dtinter)
                             else: 
-                                dihedraltypearray.append(dtinter[::-1])
+                                dihedraltypearray.append(dtinter[::-1])"""
     for x,i in enumerate(np.unique(bondtypearray)):
-        out_moltypes[1].append(f"bondID  {x+1}, atomtypes in this bond: {i}\n")  
+        out_moltypes[1].append(f"bondID  {x+1}, atomtypes in this bond: {i}")  
     for x,i in enumerate(np.unique(angletypearray)):
         if(i not in out_moltypes[1]):
             out_moltypes[2].append(f"{i}")
@@ -262,24 +253,26 @@ def MakeMolecule(inputPointMesh, index, moleculeID, lastbond, lastangle, lastdih
     for x,i in enumerate(np.unique(atomtypearray)):
         if(i not in out_moltypes[3]):
             out_moltypes[0].append(f"{i}")
-    print("charges: ", chargearray)
     bondtypearray=[[x+1 for x,i in enumerate(np.unique(bondtypearray)) if (i==j)][0]  for j in bondtypearray]
     angletypearray=[[x+1 for x,i in enumerate(np.unique(angletypearray))if(i==j)][0] for j in angletypearray]
     dihedraltypearray=[[x+1 for x,i in enumerate(np.unique(dihedraltypearray))if(i==j)][0] for j in dihedraltypearray]
     for i,vert in enumerate(bm.verts):
-        out_atoms.append(f"{index} {moleculeID} {atomtypearray[i]} {chargearray[i]} {vert.co[0]} {vert.co[1]} {vert.co[2]}\n")
-        index+=1
+        out_atoms.append(f"{lastatom+i} {moleculeID} {atomtypearray[i]} {chargearray[i]} {vert.co[0]} {vert.co[1]} {vert.co[2]}\n")
+        
     
     #WEITER HIER brauche eine Liste der Bond types über die atomsorte aus den vertex groups. Muss auch prüfen ob ab=ba
     for i,e in enumerate(inputPointMesh.data.edges):
-        out_bonds[i] = f"{lastbond+i+1} {bondtypearray[i]} {e.vertices[0]+1} {e.vertices[1]+1}\n"
+        out_bonds[i] = f"{lastbond+i+1} {bondtypearray[i]} {e.vertices[0]+lastatom} {e.vertices[1]+lastatom}\n"
     print("uniqueangles: ",angletypearray, len(out_angles), ", ", len(angletypearray))
     for i,a in enumerate(out_angles):
         out_angles[i] = f"{lastangle+i+1} {angletypearray[i]} {a}\n"
     for i, d in enumerate(out_dihedrals):
         out_dihedrals[i] = f"{lastdihedral+i+1} {dihedraltypearray[i]} {d}\n"
+    lastatom += len(out_atoms)
+    lastbond += len(out_bonds)
+    print("charges: ", chargearray, "dihedraltypes",dihedraltypearray, "lastatom", lastatom)
     
-    return index, out_atoms, out_bonds, out_angles, out_dihedrals, out_moltypes
+    return lastatom, out_atoms, out_bonds, out_angles, out_dihedrals, out_moltypes
 
 
     # cycle through all vertices
@@ -298,12 +291,13 @@ def WriteLammpsFile(inputSelection):
     dihedrals = []
     CSinfo = [] # default array for polarizable pairs written as strings
     #print(len(inputSelection))
-    last_bond=0
-    last_angle=0
-    last_dihedral=0
+    last_atom=1
+    last_bond=1
+    last_angle=1
+    last_dihedral=1
     n_bondTypes=0
     # first iterate and write all atom to arrays
-    last_atom = 1 # index for atom counter
+    index = 1 # index for atom counter
     moleculeID = 1 # the molecule ID needs to be changed if polarizable two-point dipoles are used. Therefore, the ID must be counted up.
     # nonpolarizable atoms still use the molecule-ID 1
     
@@ -322,7 +316,7 @@ def WriteLammpsFile(inputSelection):
         nam = obj.name.split("_")
         if ("Pol" in nam):
             
-            lastatom, o_at, o_bd, o_cs, moleculeID,out_moltypes =MakePolarizable(obj, moleculeID+1,  last_bond,out_moltypes)
+            index, o_at, o_bd, o_cs, moleculeID,out_moltypes =MakePolarizable(obj,  moleculeID+1, index, last_bond,out_moltypes)
             last_bond+=len(o_bd)
             for i in o_at:
                 polarizable.append(i)
@@ -333,19 +327,12 @@ def WriteLammpsFile(inputSelection):
             
             n_bondTypes+=1
         elif ("Mol" in nam):
-            last_atom, o_at, o_bd, o_angles, o_dihedral, out_moltypes_update= MakeMolecule(obj, moleculeID, last_atom, last_bond, last_angle, last_dihedral, out_moltypes)
-            for i in out_moltypes_update[0]:
-                if i not in out_moltypes[0]:
-                    out_moltypes[0].append(i)
-            for i in out_moltypes_update[1]:
-                if i not in out_moltypes[1]:
-                    out_moltypes[1].append(i)
-            for i in out_moltypes_update[2]:
-                if i not in out_moltypes[2]:
-                    out_moltypes[2].append(i)
-            for i in out_moltypes_update[3]:
-                if i not in out_moltypes[3]:
-                    out_moltypes[3].append(i)
+            index, o_at, o_bd, o_angles, o_dihedral, out_moltypes_update= MakeMolecule(obj, moleculeID,index, last_bond, last_angle, last_dihedral, out_moltypes)
+            for i,info in enumerate(out_moltypes_update):
+                for j in info:
+                    if j not in out_moltypes[i]:
+                        out_moltypes[i].append(j)
+            print("index",  index)
             moleculeID+=1
             last_bond+=len(o_bd)
             last_angle+=len(o_angles)
@@ -360,16 +347,17 @@ def WriteLammpsFile(inputSelection):
                 dihedrals.append(i)
         else:
             print(nam)
-            last_atom, o_at,out_moltypes = MakeAtoms(obj, last_atom,out_moltypes)
+            index, o_at,out_moltypes = MakeAtoms(obj, moleculeID,index,out_moltypes)
+            moleculeID+=1
             #print(o_at) 
             for i in o_at:
                 atoms.append(i)
     # second iteration: Open the file and write everything to add the header 
     #print(len(atoms)) 
-    f = open(datapath+f"\{datafilename}_.data", "w")
+    f = open(datapath+f"\{datafilename}.data", "w")
     f.write(f"#This structure was created in Blender, plugin written by Rene Rekers\n\n")
     f.write(f"{len(atoms)+len(polarizable)} atoms\n{len(bonds)} bonds\n{len(angles)} angles\n{len(dihedrals)} dihedrals\n\n")
-    f.write(f"{len(out_moltypes[0])} atom types\n{len(out_moltypes[1])} bond types\n{len(out_moltypes[2])} angle types\n{len(out_moltypes[3])} dihedral types\n\n")
+    f.write(f"{len(np.unique(out_moltypes[0]))} atom types\n{len(np.unique(out_moltypes[1]))} bond types\n{len(np.unique(out_moltypes[2]))} angle types\n{len(np.unique(out_moltypes[3]))} dihedral types\n\n")
     f.write(f"{-10} {60} xlo xhi\n")
     f.write(f"{-25} {25} ylo yhi\n")
     f.write(f"{-25} {25} zlo zhi\n\nAtoms # full\n\n")
@@ -395,15 +383,15 @@ def WriteLammpsFile(inputSelection):
         for i in CSinfo:
             f.write(i)
     f.close()
-    
+    print("out_moltypes",out_moltypes)
     #generate helper file
     # preprocess all info and generate the type file
-    f = open(datapath+f"\{datafilename}_helper.txt","w")
+    f = open(datapath+f"\{datafilename}helper.txt","w")
     f.write("This file helps you with the force field parameters\n\n")    
     f.write("bond types\n")
     # sort the losts for uniques
     for x,w in enumerate(np.unique(out_moltypes[1])):
-        f.write(f"bond{x+1}, atomtypes in this bond: "+w)
+        f.write(f"bond{x+1}, atomtypes in this bond: "+w+"\n")
     f.write("\nangle types\n")
     # sort the losts for uniques
     for x,w in enumerate(np.unique(out_moltypes[2])):
