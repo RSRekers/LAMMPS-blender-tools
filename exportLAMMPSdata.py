@@ -134,145 +134,188 @@ def MakeMolecule(inputPointMesh,  moleculeID,lastatom, lastbond, lastangle, last
     for i,group in enumerate(inputPointMesh.vertex_groups):
         nam=group.name.split("_")
         print(nam)
+        if(nam[0] not in out_moltypes[0]):
+            out_moltypes[0].append(nam[0])
         atomtype_helperarray+= [ v.index for v in inputPointMesh.data.vertices if i in [ vg.group for vg in v.groups ] ]
         typearray += [ int(float(nam[0])) for v in inputPointMesh.data.vertices if i in [ vg.group for vg in v.groups ] ]
         chargearray += [ nam[1] for v in inputPointMesh.data.vertices if i in [ vg.group for vg in v.groups ] ]
         
-    print([v.index for v in bm.verts])
-    print("types: ", typearray)
-    print("verts ", atomtype_helperarray)
+    #print([v.index for v in bm.verts])
+    print([v.co for v in bm.verts])
     atomtypearray = [typearray[v] for v in np.argsort(atomtype_helperarray)]
     chargearray = [chargearray[v] for v in np.argsort(atomtype_helperarray)]
-    bondtypearray=[]
+    
+    print("types: ", atomtypearray)
+    print("verts ", atomtype_helperarray)
+    #bondtypearray=[]
     angletypearray=[]
     dihedraltypearray=[]
     for i,e in enumerate(inputPointMesh.data.edges):
         a = e.vertices[0]
         b = e.vertices[1]
-        n = np.sort([a,b])
-        out_bonds.append(f"{a+lastatom} {b+lastatom}")
-        bondtypearray.append(f"{atomtypearray[n[0]]} {atomtypearray[n[1]]}")
+        n = np.sort([atomtypearray[a],atomtypearray[b]])
+        dtinter = f"{n[0]} {n[1]}"
+        if(dtinter not in out_moltypes[1]):
+            out_moltypes[1].append(dtinter)
+            out_bonds.append(f"{i+lastatom} {len(out_moltypes[1])} {a+lastatom} {b+lastatom}")
+            #print("bond debug: ", out_moltypes[1].index(dtinter)+1,"newindex: ",len(out_moltypes[1]),"\n dtinter: ", dtinter, out_moltypes[1])
+        else:
+            out_bonds.append(f"{i+lastatom} {out_moltypes[1].index(dtinter)+1} {a+lastatom} {b+lastatom}")
+            #print("bond debug else: ", out_moltypes[1].index(dtinter)+1,"dtinter: ", dtinter ,out_moltypes[1])
+        
         for j,ang in enumerate(inputPointMesh.data.edges):
             c = ang.vertices[0]
             d = ang.vertices[1]
             subchain=None
             if(i<j):
+                angleindex = 0
                 if(b==c):
                     dtinter=f"{atomtypearray[a]} {atomtypearray[b]} {atomtypearray[d]}"
                     dtinter_rev=f"{atomtypearray[d]} {atomtypearray[b]} {atomtypearray[a]}"
-                    if(dtinter in out_moltypes[2] or dtinter in angletypearray):
-                        subchain=[a,b,d]
-                    elif(dtinter_rev in out_moltypes[2] or dtinter_rev in angletypearray):
-                        subchain=[d,b,a]
-                    else: 
-                        subchain=[a,b,d]
-                    out_angles.append(f"{subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
-                    angletypearray.append(dtinter)
+                    #deb = dtinter
+                    subchain=[a,b,d]
+                    if(dtinter_rev not in out_moltypes[2] and dtinter not in out_moltypes[2]): # check if angle type not existing then add new possibility
+                        out_moltypes[2].append(dtinter)
+                        angleindex = len(out_moltypes[2])
+                    else: # if angletype already exists check whether it is the reversed or original sequence and add
+                        if(dtinter not in out_moltypes[2]):
+                            dtinter = dtinter_rev
+                            subchain = [d,b,a]
+                            #deb = dtinter_rev+"_reved"
+                        angleindex = out_moltypes[2].index(dtinter)+1
+                    out_angles.append(f"{angleindex} {subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
+                    #print("angledebug-bc: ",subchain,a,b,c,d, "deb: ", deb, "type: ",dtinter,out_moltypes[2].index(dtinter)+1)   
                 elif(b==d):
                     #out_angles.append(f"{a} {b} {c}")
                     dtinter=f"{atomtypearray[a]} {atomtypearray[b]} {atomtypearray[c]}"
                     dtinter_rev=f"{atomtypearray[c]} {atomtypearray[b]} {atomtypearray[a]}"
-                    if(dtinter in out_moltypes[2] or dtinter in angletypearray):
-                        subchain=[a,b,c]
-                    elif(dtinter_rev in out_moltypes[2] or dtinter_rev in angletypearray):
-                        subchain=[d,b,a]
+                    #deb = dtinter
+                    subchain=[c,b,a]
+                    if(dtinter_rev not in out_moltypes[2] and dtinter not in out_moltypes[2]):
+                        out_moltypes[2].append(dtinter)
+                        angleindex = len(out_moltypes[2])
                     else: 
-                        subchain=[a,b,c]
-                    angletypearray.append(dtinter)
-                    out_angles.append(f"{subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
+                        if(dtinter not in out_moltypes[2]):
+                            dtinter = dtinter_rev
+                            subchain = [a,b,c]
+                            #deb = dtinter_rev+"_reved"
+                        angleindex = out_moltypes[2].index(dtinter)+1
+                    out_angles.append(f"{out_moltypes[2].index(dtinter)+1} {subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
+                    #print("angledebug-bd: ",subchain,a,b,c,d, "deb: ", deb, "type: ",dtinter,out_moltypes[2].index(dtinter)+1)
                 elif(a==c):
-                    #out_angles.append(f"{b} {c} {d}")
                     dtinter=f"{atomtypearray[b]} {atomtypearray[c]} {atomtypearray[d]}"
-                    dtinter_rev=f"{atomtypearray[d]} {atomtypearray[c]} {atomtypearray[a]}"
-                    if(dtinter in out_moltypes[2] or dtinter in angletypearray):
-                        subchain=[b,c,d]
-                    elif(dtinter_rev in out_moltypes[2] or dtinter_rev in angletypearray):
-                        subchain=[d,c,b]
+                    dtinter_rev=f"{atomtypearray[d]} {atomtypearray[c]} {atomtypearray[b]}"
+                    #deb = dtinter
+                    subchain=[d,c,b]
+                    if(dtinter_rev not in out_moltypes[2] and dtinter not in out_moltypes[2]):
+                        out_moltypes[2].append(dtinter)
+                        angleindex = len(out_moltypes[2])
                     else: 
-                        subchain=[b,c,d]
-                    angletypearray.append(dtinter)
-                    out_angles.append(f"{subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
+                        if(dtinter not in out_moltypes[2]):
+                            dtinter = dtinter_rev
+                            subchain = [b,c,d]
+                            #deb = dtinter_rev+"_reved"
+                        angleindex = out_moltypes[2].index(dtinter)+1
+                    out_angles.append(f"{out_moltypes[2].index(dtinter)+1} {subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
+                    #print("angledebug-ac: ",subchain,a,b,c,d, "deb: ", deb, "type: ",dtinter,out_moltypes[2].index(dtinter)+1)
                 elif(a==d):
                     #out_angles.append(f"{b} {a} {c}")
                     dtinter=f"{atomtypearray[b]} {atomtypearray[a]} {atomtypearray[c]}"
                     dtinter_rev=f"{atomtypearray[c]} {atomtypearray[a]} {atomtypearray[b]}"
-                    if(dtinter in out_moltypes[2] or dtinter in angletypearray):
-                        subchain=[b,a,c]
-                    elif(dtinter_rev in out_moltypes[2] or dtinter_rev in angletypearray):
-                        subchain=[c,a,b]
+                    #deb = dtinter
+                    subchain=[c,a,b]
+                    if(dtinter_rev not in out_moltypes[2] and dtinter not in out_moltypes[2]):
+                        #deb = dtinter_rev+"_reved"
+                        out_moltypes[2].append(dtinter)
+                        angleindex = len(out_moltypes[2])
                     else: 
-                        subchain=[b,a,c]
-                    angletypearray.append(dtinter)
-                    out_angles.append(f"{subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
+                        if(dtinter not in out_moltypes[2]):
+                            dtinter = dtinter_rev
+                            subchain = [b,a,c]
+                            #deb = dtinter_rev+"_reved"
+                        angleindex = out_moltypes[2].index(dtinter)+1
+                    out_angles.append(f"{out_moltypes[2].index(dtinter)+1} {subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
+                    #print("angledebug-ad: ",subchain,a,b,c,d, "deb: ", deb, "type: ",dtinter,out_moltypes[2].index(dtinter)+1)
                 for k,e_dihed in enumerate(inputPointMesh.data.edges):
                     e = e_dihed.vertices[0]
                     f = e_dihed.vertices[1]
-                    """if(j<k and subchain != None):
+                    
+                    if(j<k and subchain != None):
+                        dihedralIndex=0
                         if(e==subchain[0]):
-                            #print("matchdihed: ", i,j,k,": ", a, b,c,d,e,f)
-                            out_dihedrals.append(f"{f+lastatom} {subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
-                            
                             dtinter = f"{atomtypearray[f]} {atomtypearray[subchain[0]]} {atomtypearray[subchain[1]]} {atomtypearray[subchain[2]]}"
-                            if(dtinter in out_moltypes[3] or dtinter in dihedraltypearray):
-                                dihedraltypearray.append(dtinter)
+                            dtinter_rev = f"{atomtypearray[subchain[2]]} {atomtypearray[subchain[1]]} {atomtypearray[subchain[0]]} {atomtypearray[f]}"
+                            dihed = f"{f+lastatom} {subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}"
+                            if(dtinter not in out_moltypes[3] and dtinter_rev not in out_moltypes[3]):
+                                out_moltypes[3].append(dtinter)
+                                dihedralIndex = len(out_moltypes[3])
                             else: 
-                                dihedraltypearray.append(dtinter[::-1])
+                                if(dtinter not in out_moltypes[3]):
+                                    dtinter = dtinter_rev
+                                    dihed = f"{subchain[2]+lastatom} {subchain[1]+lastatom} {subchain[0]+lastatom} {f+lastatom}"
+                                dihedralIndex = out_moltypes[3].index(dtinter)+1
+                            out_dihedrals.append(f"{dihedralIndex} {dihed}")
+                            
                         elif(e==subchain[2]):
-                            #print("matchdihed: ", i,j,k,": ", a, b,c,d,e,f)
-                            out_dihedrals.append(f"{f+lastatom} {subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
-                            dtinter=f"{atomtypearray[f]} {atomtypearray[subchain[2]]} {atomtypearray[subchain[1]]} {atomtypearray[subchain[0]]}"
-                            if(dtinter in out_moltypes[3] or dtinter in dihedraltypearray):
-                                dihedraltypearray.append(dtinter)
+                            dtinter=f"{atomtypearray[subchain[0]]} {atomtypearray[subchain[1]]} {atomtypearray[subchain[2]]} {atomtypearray[f]}"
+                            dtinter_rev = f"{atomtypearray[f]} {atomtypearray[subchain[2]]} {atomtypearray[subchain[1]]} {atomtypearray[subchain[0]]}"
+                            dihed = f"{subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom} {f+lastatom}"
+                            if(dtinter not in out_moltypes[3] and dtinter_rev not in out_moltypes[3]):
+                                out_moltypes[3].append(dtinter)
+                                dihedralIndex = len(out_moltypes[3])
                             else: 
-                                dihedraltypearray.append(dtinter[::-1])
+                                if(dtinter not in out_moltypes[3]):
+                                    dtinter = dtinter_rev
+                                    dihed = f"{f+lastatom} {subchain[2]+lastatom} {subchain[1]+lastatom} {subchain[0]+lastatom}"
+                                dihedralIndex = out_moltypes[3].index(dtinter)+1
+                            out_dihedrals.append(f"{dihedralIndex} {dihed}")
 
                         elif(f==subchain[0]):
-                            #print("matchdihed: ", i,j,k,": ", a, b,c,d,e,f)
-                            out_dihedrals.append(f"{e+lastatom} {subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
                             dtinter=f"{atomtypearray[e]} {atomtypearray[subchain[0]]} {atomtypearray[subchain[1]]} {atomtypearray[subchain[2]]}"
-                            if(dtinter in out_moltypes[3] or dtinter in dihedraltypearray):
-                                dihedraltypearray.append(dtinter)
+                            dtinter_rev = f"{atomtypearray[subchain[2]]} {atomtypearray[subchain[1]]} {atomtypearray[subchain[0]]} {atomtypearray[e]}"
+                            dihed = f"{e+lastatom} {subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}"
+                            if(dtinter not in out_moltypes[3] and dtinter_rev not in out_moltypes[3]):
+                                out_moltypes[3].append(dtinter)
+                                dihedralIndex = len(out_moltypes[3])
                             else: 
-                                dihedraltypearray.append(dtinter[::-1])
+                                if(dtinter not in out_moltypes[3]):
+                                    dtinter = dtinter_rev
+                                    dihed = f"{subchain[2]+lastatom} {subchain[1]+lastatom} {subchain[0]+lastatom} {e+lastatom}"
+                                dihedralIndex = out_moltypes[3].index(dtinter)+1
+                            out_dihedrals.append(f"{dihedralIndex} {dihed}")
                         elif(f==subchain[2]):
-                            #print("matchdihed: ", i,j,k,": ", a, b,c,d,e,f)
-                            out_dihedrals.append(f"{e+lastatom} {subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom}")
                             dtinter=f"{atomtypearray[e]} {atomtypearray[subchain[2]]} {atomtypearray[subchain[1]]} {atomtypearray[subchain[0]]}"
-                            if(dtinter in out_moltypes[3] or dtinter in dihedraltypearray):
-                                dihedraltypearray.append(dtinter)
+                            dtinter_rev = f"{atomtypearray[subchain[0]]} {atomtypearray[subchain[1]]} {atomtypearray[subchain[2]]} {atomtypearray[e]}"
+                            dihed = f"{e+lastatom} {subchain[2]+lastatom} {subchain[1]+lastatom} {subchain[0]+lastatom}"
+                            if(dtinter not in out_moltypes[3] and dtinter_rev not in out_moltypes[3]):
+                                out_moltypes[3].append(dtinter)
+                                dihedralIndex = len(out_moltypes[3])
                             else: 
-                                dihedraltypearray.append(dtinter[::-1])"""
-    for x,i in enumerate(np.unique(bondtypearray)):
-        out_moltypes[1].append(f"bondID  {x+1}, atomtypes in this bond: {i}")  
-    for x,i in enumerate(np.unique(angletypearray)):
-        if(i not in out_moltypes[1]):
-            out_moltypes[2].append(f"{i}")
-    for x,i in enumerate(np.unique(dihedraltypearray)):
+                                if(dtinter not in out_moltypes[3]):
+                                    dtinter = dtinter_rev
+                                    dihed = f"{subchain[0]+lastatom} {subchain[1]+lastatom} {subchain[2]+lastatom} {e+lastatom}"
+                                dihedralIndex = out_moltypes[3].index(dtinter)+1
+                            out_dihedrals.append(f"{dihedralIndex} {dihed}")
+    
+    """for x,i in enumerate(np.unique(dihedraltypearray)):
         if(i not in out_moltypes[2]):
             out_moltypes[3].append(f"{i}")
     for x,i in enumerate(np.unique(atomtypearray)):
         if(i not in out_moltypes[3]):
-            out_moltypes[0].append(f"{i}")
-    bondtypearray=[[x+1 for x,i in enumerate(np.unique(bondtypearray)) if (i==j)][0]  for j in bondtypearray]
-    angletypearray=[[x+1 for x,i in enumerate(np.unique(angletypearray))if(i==j)][0] for j in angletypearray]
-    dihedraltypearray=[[x+1 for x,i in enumerate(np.unique(dihedraltypearray))if(i==j)][0] for j in dihedraltypearray]
+            out_moltypes[0].append(f"{i}")"""
+    #angletypearray=[[x+1 for x,i in enumerate(np.unique(angletypearray))if(i==j)][0] for j in angletypearray]
+    #dihedraltypearray=[[x+1 for x,i in enumerate(np.unique(dihedraltypearray))if(i==j)][0] for j in dihedraltypearray]
+    for i,x in enumerate(out_angles):
+        out_angles[i] = f"{i+lastangle} {x}"
     for i,vert in enumerate(bm.verts):
         out_atoms.append(f"{lastatom+i} {moleculeID} {atomtypearray[i]} {chargearray[i]} {vert.co[0]} {vert.co[1]} {vert.co[2]}\n")
-        
-    
-    #WEITER HIER brauche eine Liste der Bond types über die atomsorte aus den vertex groups. Muss auch prüfen ob ab=ba
-    for i,e in enumerate(inputPointMesh.data.edges):
-        out_bonds[i] = f"{lastbond+i+1} {bondtypearray[i]} {e.vertices[0]+lastatom} {e.vertices[1]+lastatom}\n"
-    print("uniqueangles: ",angletypearray, len(out_angles), ", ", len(angletypearray))
-    for i,a in enumerate(out_angles):
-        out_angles[i] = f"{lastangle+i+1} {angletypearray[i]} {a}\n"
     for i, d in enumerate(out_dihedrals):
-        out_dihedrals[i] = f"{lastdihedral+i+1} {dihedraltypearray[i]} {d}\n"
+        out_dihedrals[i] = f"{lastdihedral+i} {d}"
     lastatom += len(out_atoms)
     lastbond += len(out_bonds)
     print("charges: ", chargearray, "dihedraltypes",dihedraltypearray, "lastatom", lastatom)
     
-    return lastatom, out_atoms, out_bonds, out_angles, out_dihedrals, out_moltypes
+    return out_atoms, out_bonds, out_angles, out_dihedrals, out_moltypes
 
 
     # cycle through all vertices
@@ -302,7 +345,7 @@ def WriteLammpsFile(inputSelection):
     # nonpolarizable atoms still use the molecule-ID 1
     
     inputList = []
-    out_moltypes=[[],[],[],[]] # bonds, angles,dihedrals,atom types
+    out_moltypes=[[],[],[],[]] # atom types,bonds, angles,dihedrals. the last three are multiplets of the type numbers
     for obj in inputSelection:
         n = obj.name.split("_")
         if("Pol" in n):
@@ -316,7 +359,7 @@ def WriteLammpsFile(inputSelection):
         nam = obj.name.split("_")
         if ("Pol" in nam):
             
-            index, o_at, o_bd, o_cs, moleculeID,out_moltypes =MakePolarizable(obj,  moleculeID+1, index, last_bond,out_moltypes)
+            last_atom, o_at, o_bd, o_cs, moleculeID,out_moltypes =MakePolarizable(obj,  moleculeID+1, last_atom, last_bond,out_moltypes)
             last_bond+=len(o_bd)
             for i in o_at:
                 polarizable.append(i)
@@ -327,13 +370,10 @@ def WriteLammpsFile(inputSelection):
             
             n_bondTypes+=1
         elif ("Mol" in nam):
-            index, o_at, o_bd, o_angles, o_dihedral, out_moltypes_update= MakeMolecule(obj, moleculeID,index, last_bond, last_angle, last_dihedral, out_moltypes)
-            for i,info in enumerate(out_moltypes_update):
-                for j in info:
-                    if j not in out_moltypes[i]:
-                        out_moltypes[i].append(j)
-            print("index",  index)
+            o_at, o_bd, o_angles, o_dihedral, out_moltypes= MakeMolecule(obj, moleculeID,last_atom, last_bond, last_angle, last_dihedral, out_moltypes)
+            
             moleculeID+=1
+            last_atom+=len(o_at)
             last_bond+=len(o_bd)
             last_angle+=len(o_angles)
             last_dihedral+=len(o_dihedral)
@@ -347,7 +387,7 @@ def WriteLammpsFile(inputSelection):
                 dihedrals.append(i)
         else:
             print(nam)
-            index, o_at,out_moltypes = MakeAtoms(obj, moleculeID,index,out_moltypes)
+            last_atom, o_at,out_moltypes = MakeAtoms(obj, moleculeID,last_atom,out_moltypes)
             moleculeID+=1
             #print(o_at) 
             for i in o_at:
@@ -368,16 +408,16 @@ def WriteLammpsFile(inputSelection):
     if(len(bonds)>0):
         f.write("\nBonds\n\n")
         for i in bonds:
-            f.write(i)
+            f.write(i+"\n")
     if(len(angles)>0):
         f.write("\nAngles\n\n")
         for i in angles:
-            f.write(i)
+            f.write(i+"\n")
         
     if(len(dihedrals)>0):
         f.write("\nDihedrals\n\n")
         for i in dihedrals:
-            f.write(i)
+            f.write(i+"\n")
     if(len(CSinfo)>0):
         f.write("\nCS-Info\n\n")
         for i in CSinfo:
@@ -390,14 +430,14 @@ def WriteLammpsFile(inputSelection):
     f.write("This file helps you with the force field parameters\n\n")    
     f.write("bond types\n")
     # sort the losts for uniques
-    for x,w in enumerate(np.unique(out_moltypes[1])):
+    for x,w in enumerate(out_moltypes[1]):
         f.write(f"bond{x+1}, atomtypes in this bond: "+w+"\n")
     f.write("\nangle types\n")
     # sort the losts for uniques
-    for x,w in enumerate(np.unique(out_moltypes[2])):
+    for x,w in enumerate(out_moltypes[2]):
         f.write(f"angleID {x+1}, atomtypes in this angle: "+w+"\n")
     f.write("\ndihedral types\n")
-    for x,w in enumerate(np.unique(out_moltypes[3])):
+    for x,w in enumerate(out_moltypes[3]):
         f.write(f"dihedralID {x+1}, atomtypes in this dihedral: "+w+"\n")
     f.close()
 # 2*8.49051*cos(pi/6)
