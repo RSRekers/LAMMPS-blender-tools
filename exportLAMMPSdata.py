@@ -15,9 +15,9 @@ ylo=0
 yhi=0
 zlo=0
 zhi = 0
-datapath = os.path.realpath(r"C:\Users\User\lammpsProjects\PEO_Nasicon_interface\neu_PEO\V2")
+datapath = os.path.realpath(r"C:\Users\User\lammpsProjects\PEO_Nasicon_interface\PEO_LiTFSI\EO3_24chain\test1")
 print("start")
-datafilename = "PEOLiTFSIEO6complexT1"
+datafilename = "PEOLiTFSIEO3-24EO"
 
 def CheckBox(x,y,z):
     global xlo, xhi, ylo, yhi, zlo, zhi
@@ -55,7 +55,7 @@ def MakeAtoms(inputPointMesh,moleculeID, index,out_moltypes):
         #+print(vert.co)
         #print(nam)
         xlo, xhi, ylo, yhi, zlo, zhi=CheckBox(vert.co[0],vert.co[1],vert.co[2])
-        output.append(f"{index} {moleculeID} {typeID} {nam[1]} {vert.co[0]} {vert.co[1]} {vert.co[2]}\n")
+        output.append(f"{index} {moleculeID} {typeID} {nam[1]} {vert.co[0]:.8f} {vert.co[1]:.8f} {vert.co[2]:.8f}\n")
         index +=1
         #print(vert.co[0],vert.co[2])
     
@@ -308,7 +308,7 @@ def MakeMolecule(inputPointMesh,  moleculeID,lastatom, lastbond, lastangle, last
     for i,x in enumerate(out_angles):
         out_angles[i] = f"{i+lastangle} {x}"
     for i,vert in enumerate(bm.verts):
-        out_atoms.append(f"{lastatom+i} {moleculeID} {atomtypearray[i]} {chargearray[i]} {vert.co[0]} {vert.co[1]} {vert.co[2]}\n")
+        out_atoms.append(f"{lastatom+i} {moleculeID} {atomtypearray[i]} {chargearray[i]} {vert.co[0]:.8f} {vert.co[1]:.8f} {vert.co[2]:.8f}\n")
     for i, d in enumerate(out_dihedrals):
         out_dihedrals[i] = f"{lastdihedral+i} {d}"
     lastatom += len(out_atoms)
